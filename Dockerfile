@@ -1,12 +1,14 @@
-FROM python:3.10-slim-bookworm
+FROM python:3.11.7
 
-RUN apt update && apt upgrade -y
-RUN apt install git -y
-COPY requirements.txt /requirements.txt
+RUN apt update && apt upgrade -y && \
+    apt install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN cd /
-RUN pip3 install -U pip && pip3 install -U -r requirements.txt
-RUN mkdir /LazyProvider
-WORKDIR /LazyProvider
-COPY start.sh /start.sh
-CMD ["/bin/bash", "/start.sh"]
+WORKDIR /providerbotz
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip --root-user-action=ignore && \
+    pip install --no-cache-dir -r requirements.txt --root-user-action=ignore
+
+COPY . .
+CMD ["python3", "bot.py"]
