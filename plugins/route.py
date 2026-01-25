@@ -6,12 +6,12 @@ import time
 import mimetypes
 from aiohttp import web
 from aiohttp.http_exceptions import BadStatusLine
-from lazybot import multi_clients, work_loads, LazyProviderBot
-from server.exceptions import FIleNotFound, InvalidHash
-from zzint import StartTime, __version__
-from util.custom_dl import ByteStreamer
-from util.time_format import get_readable_time
-from util.render_template import render_page
+from LazyProvider.lazybot import multi_clients, work_loads, LazyProviderBot
+from LazyProvider.server.exceptions import FIleNotFound, InvalidHash
+from LazyProvider.zzint import StartTime, __version__
+from LazyProvider.util.custom_dl import ByteStreamer
+from LazyProvider.util.time_format import get_readable_time
+from LazyProvider.util.render_template import render_page
 from info import *
 
 
