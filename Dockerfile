@@ -1,14 +1,12 @@
-FROM python:3.11.7
+FROM python:3.8-slim-bookworm
 
-RUN apt update && apt upgrade -y && \
-    apt install -y --no-install-recommends git && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt update && apt upgrade -y
+RUN apt install git -y
+COPY requirements.txt /requirements.txt
 
-WORKDIR /providerbotz
-
-COPY requirements.txt ./
-RUN pip install --no-cache-dir --upgrade pip --root-user-action=ignore && \
-    pip install --no-cache-dir -r requirements.txt --root-user-action=ignore
-
-COPY . .
-CMD ["python3", "bot.py"]
+RUN cd /
+RUN pip3 install -U pip && pip3 install -U -r requirements.txt
+RUN mkdir /LazyPrincess
+WORKDIR /LazyPrincess
+COPY start.sh /start.sh
+CMD ["/bin/bash", "/start.sh"]
