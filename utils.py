@@ -1,9 +1,9 @@
 import logging
 from pyrogram.errors import InputUserDeactivated, UserNotParticipant, FloodWait, UserIsBlocked, PeerIdInvalid
 from info import *
-from imdb import Cinemagoer
+from imdb import IMDb
 import asyncio
-from pyrogram.types import Message, InlineKeyboardButton
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram import enums
 from typing import Union
 import re
@@ -14,6 +14,7 @@ from database.users_chats_db import db
 from bs4 import BeautifulSoup
 import requests
 import aiohttp
+from shortzy import Shortzy
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -22,7 +23,7 @@ BTN_URL_REGEX = re.compile(
     r"(\[([^\[]+?)\]\((buttonurl|buttonalert):(?:/{0,2})(.+?)(:same)?\))"
 )
 
-imdb = Cinemagoer()
+imdb = IMDb() 
 
 BANNED = {}
 SMART_OPEN = '“'
@@ -33,15 +34,21 @@ START_CHAR = ('\'', '"', SMART_OPEN)
 class temp(object):
     BANNED_USERS = []
     BANNED_CHATS = []
+    LAZY_VERIFIED_CHATS = []
     ME = None
     CURRENT=int(os.environ.get("SKIP", 2))
     CANCEL = False
     MELCOW = {}
+    GETALL = {}
+    SHORT = {}
+    IMDB_CAP = {}
     U_NAME = None
     B_NAME = None
     SETTINGS = {}
-    
+
 async def is_subscribed(bot, query):
+    if await db.find_join_req(query.from_user.id):
+        return True
     try:
         user = await bot.get_chat_member(AUTH_CHANNEL, query.from_user.id)
     except UserNotParticipant:
@@ -49,7 +56,7 @@ async def is_subscribed(bot, query):
     except Exception as e:
         logger.exception(e)
     else:
-        if user.status != 'kicked':
+        if user.status != enums.ChatMemberStatus.BANNED:
             return True
 
     return False
@@ -132,7 +139,6 @@ async def get_poster(query, bulk=False, id=False, file=None):
         'rating': str(movie.get("rating")),
         'url':f'https://www.imdb.com/title/tt{movieid}'
     }
-# https://github.com/odysseusmax/animated-lamp/blob/2ef4730eb2b5f0596ed6d03e7b05243d93e3415b/bot/utils/broadcast.py#L37
 
 async def broadcast_messages(user_id, message):
     try:
@@ -158,7 +164,7 @@ async def broadcast_messages(user_id, message):
 async def search_gagala(text):
     usr_agent = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-        'Chrome/61.0.3163.100 Safari/537.36'
+        'Chrome/109.0.5414.120 Safari/537.36'
         }
     text = text.replace(" ", '+')
     url = f'https://www.google.com/search?q={text}'
@@ -167,7 +173,6 @@ async def search_gagala(text):
     soup = BeautifulSoup(response.text, 'html.parser')
     titles = soup.find_all( 'h3' )
     return [title.getText() for title in titles]
-
 
 async def get_settings(group_id):
     settings = temp.SETTINGS.get(group_id)
@@ -184,7 +189,6 @@ async def save_group_settings(group_id, key, value):
     
 def get_size(size):
     """Get size in readable format"""
-
     units = ["Bytes", "KB", "MB", "GB", "TB", "PB", "EB"]
     size = float(size)
     i = 0
@@ -365,6 +369,39 @@ def remove_escapes(text: str) -> str:
             res += text[counter]
     return res
 
+async def get_seconds(time_string):
+    def extract_value_and_unit(ts):
+        value = ""
+        unit = ""
+
+        index = 0
+        while index < len(ts) and ts[index].isdigit():
+            value += ts[index]
+            index += 1
+
+        unit = ts[index:].lstrip()
+
+        if value:
+            value = int(value)
+
+        return value, unit
+
+    value, unit = extract_value_and_unit(time_string)
+
+    if unit == 's':
+        return value
+    elif unit == 'min':
+        return value * 60
+    elif unit == 'hour':
+        return value * 3600
+    elif unit == 'day':
+        return value * 86400
+    elif unit == 'month':
+        return value * 86400 * 30
+    elif unit == 'year':
+        return value * 86400 * 365
+    else:
+        return 0
 
 def humanbytes(size):
     if not size:
@@ -376,29 +413,67 @@ def humanbytes(size):
         size /= power
         n += 1
     return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
+    
+async def get_shortlink(chat_id, link):
+    settings = await get_settings(chat_id) #fetching settings for group
+    if 'shortlink' in settings.keys():
+        URL = settings['shortlink']
+        API = settings['shortlink_api']
+    else:
+        URL = URL_SHORTENR_WEBSITE
+        API = URL_SHORTNER_WEBSITE_API
+    if URL.startswith("shorturllink") or URL.startswith("terabox.in") or URL.startswith("urlshorten.in"):
+        URL = URL_SHORTENR_WEBSITE
+        API = URL_SHORTNER_WEBSITE_API
+    if URL == "api.shareus.io":
+        url = f'https://{URL}/easy_api'
+        params = {
+            "key": API,
+            "link": link,
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, raise_for_status=True, ssl=False) as response:
+                    data = await response.text()
+                    return data
+        except Exception as e:
+            logger.error(e)
+            return link
+    else:
+        shortzy = Shortzy(api_key=API, base_site=URL)
+        link = await shortzy.convert(link)
+        return link
+   
+def get_readable_time(seconds: int) -> str:
+    count = 0
+    readable_time = ""
+    time_list = []
+    time_suffix_list = ["s", "m", "h", " days"]
+    while count < 4:
+        count += 1
+        if count < 3:
+            remainder, result = divmod(seconds, 60)
+        else:
+            remainder, result = divmod(seconds, 24)
+        if seconds == 0 and remainder == 0:
+            break
+        time_list.append(int(result))
+        seconds = int(remainder)
+    for x in range(len(time_list)):
+        time_list[x] = str(time_list[x]) + time_suffix_list[x]
+    if len(time_list) == 4:
+        readable_time += time_list.pop() + ", "
+    time_list.reverse()
+    readable_time += ": ".join(time_list)
+    return readable_time 
 
-async def get_shortlink(link):
-    https = link.split(":")[0]
-    if "http" == https:
-        https = "https"
-        link = link.replace("http", https)
-
-    url = f'https://api.shareus.in/shortLink'
-    params = {'token': URL_SHORTNER_WEBSITE_API,
-              'link': link,
-              'format': 'json'
-              }
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, raise_for_status=True, ssl=False) as response:
-                data = await response.json(content_type='text/html')
-                if data["status"] == "success":
-                    return data['shortlink']
-                else:
-                    logger.error(f"Error: {data['message']}")
-                    return f'https://api.shareus.in/directLink?token={URL_SHORTNER_WEBSITE_API}&link={link}'
-
-    except Exception as e:
-        logger.error(e)
-        return f'https://api.shareus.in/directLink?token={URL_SHORTNER_WEBSITE_API}&link={link}'
+async def get_tutorial(chat_id):
+    settings = await get_settings(chat_id) #fetching settings for group
+    if 'tutorial' in settings.keys():
+        if settings['is_tutorial']:
+            TUTORIAL_URL = settings['tutorial']
+        else:
+            TUTORIAL_URL = TUTORIAL
+    else:
+        TUTORIAL_URL = TUTORIAL
+    return TUTORIAL_URL
