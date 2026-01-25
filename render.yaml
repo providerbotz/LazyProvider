@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: LazyProvider
+    env: python
+    startCommand: python3 bot.py
+    buildCommand: pip3 install -U -r requirements.txt
+    repo: https://github.com/providerbotz/LazyProviders.git 
+    region: oregon
+    plan: free
+    branch: main
+    numInstances: 1
+    healthCheckPath: /
